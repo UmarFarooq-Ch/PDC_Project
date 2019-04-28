@@ -156,12 +156,9 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 		// log.Print(lineIndex)
 		select {
 		case msg := <-msgChan:
-
-			println("k: ", msgtobesent, msg, len(msgtobesent) != 0, msgtobesent != "not")
+			println("Msg from master: ", msg)
 			if !(strings.Index(msgtobesent, ":") > -1) && msgtobesent != "not" {
-				println("ms:", msgtobesent)
 				r = strings.Split(string(msg), ":")
-				println("r: ", r[0])
 				switch r[0] {
 				case "stp":
 					msgtobesent = "nil"
@@ -173,11 +170,8 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 					msgtobesent = "wrk"
 				}
 			}
-			println("l", msgtobesent)
 			msgChan <- msgtobesent
 			if msgtobesent == "not" || (len(msgtobesent) > 0 && string(msgtobesent[0]) == "d") {
-				// log.Panic("in reset state")
-
 				msgtobesent = "" //reset
 			}
 		default:
@@ -204,29 +198,25 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 
 					}
 					lineIndex++
+
+					//next file check
 					if lineIndex == originalSize[fileIndex] {
 						log.Print("File completed.", lineIndex)
 						lineIndex = 0
 						fileIndex++
 					}
 
+					//not found check
 					if fileIndex == len(namesOriginals) {
-						// fileIndex = 0
-						// lineIndex = 0
-						// if msgtobesent != "done" {
 						msgtobesent = "not"
-						// }
 					}
 
-				} else {
-					print("hi")
+				} else if r[0] == "rep" {
+					//if replica
+
 				}
 			} else {
-				print("m: ", msgtobesent)
-				if len(msgtobesent) == 0 {
-
-					log.Panic("in reset state")
-				}
+				//reset
 				fileIndex = 0
 				lineIndex = 0
 			}

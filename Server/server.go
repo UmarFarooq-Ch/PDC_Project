@@ -62,7 +62,7 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 	addchan <- newClient
 
 	for {
-		c.Write([]byte("org:loramera" + "\n"))
+		c.Write([]byte("org:iloveyou" + "\n"))
 
 		cc, _, _ := slaveReader.ReadLine()
 		spl := strings.Split(string(cc), ":")
