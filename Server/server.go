@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	//"o«s"
 )
 
@@ -33,10 +34,10 @@ type Slave struct {
 func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan chan Slave) {
 
 	log.Printf("Handling new slave connection...\n")
-	clientReader := bufio.NewReader(c)
+	slaveReader := bufio.NewReader(c)
 	//get number of files
-	buff1, _, _ := clientReader.ReadLine() //get number of original files
-	buff2, _, _ := clientReader.ReadLine() //get number of replicated files
+	buff1, _, _ := slaveReader.ReadLine() //get number of original files
+	buff2, _, _ := slaveReader.ReadLine() //get number of replicated files
 	size, _ := strconv.Atoi(string(buff1))
 	rsize, _ := strconv.Atoi(string(buff2))
 	log.Printf("Size: %d\nRSize: %d\n", size, rsize)
@@ -46,13 +47,13 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 		rchunks: make([]string, 0, rsize)}
 	//receive original file names from slave
 	for i := 0; i < size; i++ {
-		name, _, _ := clientReader.ReadLine() //get Name of chunks
+		name, _, _ := slaveReader.ReadLine() //get Name of chunks
 		newClient.chunks = append(newClient.chunks, string(name))
 		log.Printf("Chunk # %d , Name: %s \n", i, string(name))
 	}
 	//receive replicated files names from slave
 	for i := 0; i < rsize; i++ {
-		name, _, _ := clientReader.ReadLine() //get Name of chunks
+		name, _, _ := slaveReader.ReadLine() //get Name of chunks
 		newClient.rchunks = append(newClient.rchunks, string(name))
 		log.Printf("RChunk # %d , Name: %s \n", i, string(name))
 	}
@@ -60,17 +61,29 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 	//sending new slave information to master thread
 	addchan <- newClient
 
-	buf := make([]byte, 4096)
 	for {
-		n, err := c.Read(buf)
-		if err != nil || n == 0 {
-			c.Close()
-			rmvChan <- newClient
+		c.Write([]byte("org:loramera" + "\n"))
+
+		cc, _, _ := slaveReader.ReadLine()
+		spl := strings.Split(string(cc), ":")
+		log.Print(spl[0])
+		if spl[0] == "not" || spl[0] == "done" {
+			log.Print(spl)
 			break
 		}
-		// msgchan <- newClient.nickname + string(buf[0:n])
-		// ...
+		time.Sleep(1 * time.Second)
 	}
+	// buf := make([]byte, 4096)
+	// for {
+	// 	n, err := c.Read(buf)
+	// 	if err != nil || n == 0 {
+	// 		c.Close()
+	// 		rmvChan <- newClient
+	// 		break
+	// 	}
+	// msgchan <- newClient.nickname + string(buf[0:n])
+	// ...
+	// }
 }
 
 // Master slave thread
@@ -106,10 +119,7 @@ func handleSlaves(msgchan <-chan string, addchan, rmvChan chan Slave) {
 
 }
 
-/*
-* Register new slaves
-*
- */
+//Register new slaves //main function for slave server
 func handleNewSlaves(port string) {
 
 	ln, err := net.Listen("tcp", ":"+port)
@@ -132,24 +142,8 @@ func handleNewSlaves(port string) {
 	}
 }
 func main() {
-
-	// ln, err := net.Listen("tcp", ":3000")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// // addchan := make(chan Client)
-	// msgchan := make(chan string)
-	// // go printMessages(msgchan, addchan)
-
-	// for {
-	// 	conn, err := ln.Accept()
-	// 	if err != nil {
-	// 		log.Println(err)
-	// 		continue
-	// 	}
-
-	// [1] Port number to handle new slaves
-	// [2] Port number to handle new clients
+	log.Print("To run client server on 3000 use cport=3000")
+	log.Print("To run slave  server on 6000 use sport=6000")
 	args := os.Args
 	var sport string = "3000" //give default port to slave server
 	var cport string = "6000" //give default port to client server
@@ -163,14 +157,6 @@ func main() {
 		}
 	}
 
-	// if args[1] == nil{
-	// 	slavePort = 3000
-	// }
-	// slavePort = 3000 if args[1]
-	// if args[2] == nil{
-	// 	clientPort = 5000
-	// }
-	// slavePort := int(args[1])
 	handleNewSlaves(sport)
 	cport = cport + "1"
 	// go handleConnection(conn, msgchan, addchan)
