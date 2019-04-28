@@ -152,6 +152,7 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 	var lineIndex int
 	var r []string
 	var wholefile []string
+	var indexes []int //indexes of replicatedFiles names extracted from msg sent by master
 	for {
 		// log.Print(lineIndex)
 		select {
@@ -189,7 +190,6 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 							log.Print("File " + namesOriginals[fileIndex] + " loaded")
 							log.Print("Starting search in file: " + namesOriginals[fileIndex])
 						}
-
 					}
 					//match password
 					if wholefile[lineIndex] == r[1] {
@@ -213,10 +213,53 @@ func search(msgChan chan string, namesOriginals, namesReplicas []string) {
 
 				} else if r[0] == "rep" {
 					//if replica
+					//get file indexes of files sent by master from replicated array
+					if lineIndex == 0 && fileIndex == 0 {
+						files := strings.Split(r[2], ",")
+						for _, l := range files {
+							for i, v := range namesReplicas {
+								if l == v {
+									indexes = append(indexes, i)
+									break
+								}
+							}
+						}
+					}
+					//load new file
+					if lineIndex == 0 {
+						log.Print("Loading file " + namesReplicas[indexes[fileIndex]] + " in memory")
+						file, err := ioutil.ReadFile("replicated/" + namesReplicas[indexes[fileIndex]])
+						if err != nil {
+							log.Fatal(err)
+						} else {
+							wholefile = strings.Split(string(file), "\n")
+							log.Print("File " + namesReplicas[indexes[fileIndex]] + " loaded")
+							log.Print("Starting search in file: " + namesReplicas[indexes[fileIndex]])
+						}
+					}
+					//match password
+					if wholefile[lineIndex] == r[1] {
+						msgtobesent = "done:" + namesReplicas[indexes[fileIndex]]
+						println("found", namesReplicas[indexes[fileIndex]], lineIndex)
 
+					}
+					lineIndex++
+
+					//next file check
+					if lineIndex == replicaSize[indexes[fileIndex]] {
+						log.Print("File completed.", lineIndex)
+						lineIndex = 0
+						fileIndex++
+					}
+
+					//password not found check
+					if fileIndex == len(indexes) {
+						msgtobesent = "not"
+					}
 				}
 			} else {
 				//reset
+				indexes = make([]int, 0, 0)
 				fileIndex = 0
 				lineIndex = 0
 			}
