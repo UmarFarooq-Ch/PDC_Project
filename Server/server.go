@@ -26,12 +26,16 @@ type Slave struct {
 	chunks     //original chunks
 	rchunks    //replicated chunks
 }
+type Msg struct {
+	connection net.Conn
+	msg        string
+}
 
 /*
 *	get chunks names
 *	send password to search
  */
-func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan chan Slave) {
+func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 
 	log.Printf("Handling new slave connection...\n")
 	slaveReader := bufio.NewReader(c)
@@ -42,9 +46,12 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 	rsize, _ := strconv.Atoi(string(buff2))
 	log.Printf("Size: %d\nRSize: %d\n", size, rsize)
 	//create new slave
-	newClient := Slave{connection: c,
-		chunks:  make([]string, 0, size),
-		rchunks: make([]string, 0, rsize)}
+	newClient := Slave{
+		connection: c,
+		chunks:     make([]string, 0, size),
+		rchunks:    make([]string, 0, rsize)}
+	newMsg := Msg{
+		connection: c}
 	//receive original file names from slave
 	for i := 0; i < size; i++ {
 		name, _, _ := slaveReader.ReadLine() //get Name of chunks
@@ -61,15 +68,34 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 	//sending new slave information to master thread
 	addchan <- newClient
 
+	command := "rep:STE12592:chunk_13,chunk_14,chunk_15,chunk_16,chunk_17"
 	for {
-		c.Write([]byte("rep:STE12592:chunk_13,chunk_14,chunk_15,chunk_16,chunk_17" + "\n"))
+		c.Write([]byte(command + "\n"))
 
-		cc, _, _ := slaveReader.ReadLine()
-		spl := strings.Split(string(cc), ":")
-		log.Print(spl[0])
-		if spl[0] == "not" || spl[0] == "done" {
-			log.Print(spl)
-			break
+		cc, _, err := slaveReader.ReadLine()
+		response := string(cc)
+		//check for disconnectivity
+		if response == "" || err != nil {
+			log.Println("Slave disconnected...")
+			newMsg.msg = "rmv"
+			msgchan <- newMsg
+			return
+		}
+		//Parse reponse
+		prsResp := strings.Split(response, ":")
+		log.Print(prsResp[0])
+		//set response of not found
+		if prsResp[0] == "not" {
+			command = "nil"
+			newMsg.msg = response
+			msgchan <- newMsg
+			// break
+		} else if prsResp[0] == "done" {
+			command = "nil"
+			newMsg.msg = response
+			msgchan <- newMsg
+		} else if prsResp[0] == "nil" {
+			command = "nil"
 		}
 		time.Sleep(1 * time.Second)
 	}
@@ -87,32 +113,32 @@ func handleSlaveConnection(c net.Conn, msgchan chan<- string, addchan, rmvChan c
 }
 
 // Master slave thread
-func handleSlaves(msgchan <-chan string, addchan, rmvChan chan Slave) {
+func handleSlaves(msgchan chan Msg, addchan chan Slave) {
 	slaveSlice := make([]Slave, 0, 20)
 
 	for {
 		select {
-		case msg := <-msgchan:
-			log.Printf("new message: %s", msg)
-			for _, someClient := range slaveSlice {
-				someClient.connection.Write([]byte(msg))
-			}
+		// case msg := <-msgchan:
+		// 	log.Printf("new message: %s", msg)
+		// 	for _, someClient := range slaveSlice {
+		// 		someClient.connection.Write([]byte(msg))
+		// 	}
 
 		case newSlave := <-addchan:
 			slaveSlice = append(slaveSlice, newSlave)
 			log.Printf("New slave added...")
 
-		case rmvSlave := <-rmvChan:
-			log.Printf("Slave remove request received")
-			// log.Print(slaveSlice)
-			for i, v := range slaveSlice {
-				if v.connection == rmvSlave.connection {
-					slaveSlice = RemoveIndex(slaveSlice, i)
-					break
+		case msg := <-msgchan:
+			if msg.msg == "rmv" {
+				log.Printf("Slave remove request received")
+				for i, v := range slaveSlice {
+					if v.connection == msg.connection {
+						slaveSlice = RemoveIndex(slaveSlice, i)
+						break
+					}
 				}
-			}
-			// log.Print(slaveSlice)
-			log.Printf("Slave removed")
+				log.Printf("Slave removed")
+			} //else if msg.msg == "not"
 
 		}
 	}
@@ -128,9 +154,8 @@ func handleNewSlaves(port string) {
 	}
 	log.Print("Slave Master running on port: " + port)
 	addChan := make(chan Slave)
-	msgChan := make(chan string)
-	rmvChan := make(chan Slave)
-	go handleSlaves(msgChan, addChan, rmvChan)
+	msgChan := make(chan Msg)
+	go handleSlaves(msgChan, addChan)
 
 	for {
 		conn, err := ln.Accept()
@@ -138,7 +163,7 @@ func handleNewSlaves(port string) {
 			log.Println(err)
 			continue
 		}
-		go handleSlaveConnection(conn, msgChan, addChan, rmvChan)
+		go handleSlaveConnection(conn, msgChan, addChan)
 	}
 }
 func main() {
