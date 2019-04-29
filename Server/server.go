@@ -147,7 +147,6 @@ func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 				command = "nil"
 				newMsg.msg = response
 				msgchan <- newMsg
-				// break
 			} else if prsResp[0] == "done" {
 				command = "nil"
 				newMsg.msg = response
@@ -164,7 +163,6 @@ func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan string) {
 	slaveSlice := make([]Slave, 0, 20)
 	fNameMap := make(map[string]int) //contain names of original files of slaves who disconnects
-	// requests := make(map[string]string) //key == password, value == id of sender
 	Q := queue.New(100) //conatins id:password max capacity is 100
 	workingOn := ""     //working on this password (id:password)
 	findingInReplica := false
@@ -173,9 +171,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 
 		case newSlave := <-addchan:
 			//before adding remove files from fNameMap which this slave contains
-			fmt.Println("before updating map: ", fNameMap)
 			UnPopulateMap(fNameMap, newSlave.chunks)
-			fmt.Println("new updated map: ", fNameMap)
 			//register new slave
 			slaveSlice = append(slaveSlice, newSlave)
 			log.Printf("New slave added...")
@@ -186,9 +182,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 				for i, v := range slaveSlice {
 					if v.connection == msg.connection {
 						//before removing save file of slave in fNameMap map
-						fmt.Println("before updating map: ", fNameMap)
 						PopulateMap(fNameMap, v.chunks)
-						fmt.Println("new updated map: ", fNameMap)
 						slaveSlice[i].response = "nr"
 						slaveSlice = append(slaveSlice[:i], slaveSlice[i+1:]...)
 						break
@@ -197,7 +191,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 				log.Printf("Slave removed")
 			} else if msg.msg[:3] == "not" {
 				setResponse("not", &slaveSlice, msg)
-				fmt.Println("after not: ", slaveSlice, msg, workingOn, findingInReplica)
+				// fmt.Println("after not: ", slaveSlice, msg, workingOn, findingInReplica)
 			} else if len(msg.msg) > 4 && msg.msg[:4] == "done" {
 				setResponse(msg.msg, &slaveSlice, msg)
 				// fmt.Println(slaveSlice, msg)
@@ -253,7 +247,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 							slave.response = "nr"
 							ind = append(ind, i)
 							findingInReplica = true
-							fmt.Println("slave: ", slaveSlice)
+							// fmt.Println("slave: ", slaveSlice)
 							slave.channel <- command
 						}
 					}
