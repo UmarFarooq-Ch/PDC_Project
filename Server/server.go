@@ -2,18 +2,66 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/golang-collections/go-datastructures/queue"
 	//"o«s"
 )
 
 //-------Utility functions-------
 func RemoveIndex(s []Slave, index int) []Slave {
 	return append(s[:index], s[index+1:]...)
+}
+
+func PopulateMap(m map[string]int, s []string) {
+	for _, v := range s {
+		if _, ok := m[v]; !ok {
+			m[v] = 1
+		}
+	}
+}
+
+func UnPopulateMap(m map[string]int, s []string) {
+	for _, v := range s {
+		delete(m, v)
+	}
+}
+
+func setResponse(res string, slaveSlice *[]Slave, msg Msg) {
+	//set response of slave in slaveSlice[index].id
+	index := -1
+	for i, v := range *slaveSlice {
+		if msg.connection == v.connection {
+			index = i
+			break
+		}
+	}
+	(*slaveSlice)[index].response = res
+
+}
+
+//check all responses from slaves are received or not
+func areResponsesReceived(slaveSlice []Slave) bool {
+	for _, v := range slaveSlice {
+		if v.response == "nr" {
+			return false
+		}
+	}
+	return true
+}
+
+//set responses to not received
+func resetResponses(slaveSlice *[]Slave) {
+	for i := 0; i < len(*slaveSlice); i++ {
+		(*slaveSlice)[i].response = "nr"
+	}
+
 }
 
 //-------End of Util func--------
@@ -25,6 +73,8 @@ type Slave struct {
 	connection net.Conn
 	chunks     //original chunks
 	rchunks    //replicated chunks
+	response   string
+	channel    chan string
 }
 type Msg struct {
 	connection net.Conn
@@ -49,7 +99,9 @@ func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 	newClient := Slave{
 		connection: c,
 		chunks:     make([]string, 0, size),
-		rchunks:    make([]string, 0, rsize)}
+		rchunks:    make([]string, 0, rsize),
+		channel:    make(chan string, 2),
+		response:   "nr"}
 	newMsg := Msg{
 		connection: c}
 	//receive original file names from slave
@@ -68,63 +120,63 @@ func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 	//sending new slave information to master thread
 	addchan <- newClient
 
-	command := "rep:STE12592:chunk_13,chunk_14,chunk_15,chunk_16,chunk_17"
+	command := "nil"
 	for {
-		c.Write([]byte(command + "\n"))
+		select {
+		case x := <-newClient.channel:
+			command = x
+			fmt.Println("setting new command: " + command)
+		default:
 
-		cc, _, err := slaveReader.ReadLine()
-		response := string(cc)
-		//check for disconnectivity
-		if response == "" || err != nil {
-			log.Println("Slave disconnected...")
-			newMsg.msg = "rmv"
-			msgchan <- newMsg
-			return
+			c.Write([]byte(command + "\n"))
+
+			cc, _, err := slaveReader.ReadLine()
+			response := string(cc)
+			//check for disconnectivity
+			if response == "" || err != nil {
+				log.Println("Slave disconnected...")
+				newMsg.msg = "rmv"
+				msgchan <- newMsg
+				return
+			}
+			//Parse reponse
+			prsResp := strings.Split(response, ":")
+			log.Print(prsResp[0])
+			//set response of not found
+			if prsResp[0] == "not" {
+				command = "nil"
+				newMsg.msg = response
+				msgchan <- newMsg
+				// break
+			} else if prsResp[0] == "done" {
+				command = "nil"
+				newMsg.msg = response
+				msgchan <- newMsg
+			} else if prsResp[0] == "nil" {
+				command = "nil"
+			}
+			time.Sleep(1 * time.Second)
 		}
-		//Parse reponse
-		prsResp := strings.Split(response, ":")
-		log.Print(prsResp[0])
-		//set response of not found
-		if prsResp[0] == "not" {
-			command = "nil"
-			newMsg.msg = response
-			msgchan <- newMsg
-			// break
-		} else if prsResp[0] == "done" {
-			command = "nil"
-			newMsg.msg = response
-			msgchan <- newMsg
-		} else if prsResp[0] == "nil" {
-			command = "nil"
-		}
-		time.Sleep(1 * time.Second)
 	}
-	// buf := make([]byte, 4096)
-	// for {
-	// 	n, err := c.Read(buf)
-	// 	if err != nil || n == 0 {
-	// 		c.Close()
-	// 		rmvChan <- newClient
-	// 		break
-	// 	}
-	// msgchan <- newClient.nickname + string(buf[0:n])
-	// ...
-	// }
 }
 
 // Master slave thread
-func handleSlaves(msgchan chan Msg, addchan chan Slave) {
+func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan string) {
 	slaveSlice := make([]Slave, 0, 20)
-
+	fNameMap := make(map[string]int) //contain names of original files of slaves who disconnects
+	// requests := make(map[string]string) //key == password, value == id of sender
+	Q := queue.New(100) //conatins id:password max capacity is 100
+	workingOn := ""     //working on this password (id:password)
+	findingInReplica := false
 	for {
 		select {
-		// case msg := <-msgchan:
-		// 	log.Printf("new message: %s", msg)
-		// 	for _, someClient := range slaveSlice {
-		// 		someClient.connection.Write([]byte(msg))
-		// 	}
 
 		case newSlave := <-addchan:
+			//before adding remove files from fNameMap which this slave contains
+			fmt.Println("before updating map: ", fNameMap)
+			UnPopulateMap(fNameMap, newSlave.chunks)
+			fmt.Println("new updated map: ", fNameMap)
+			//register new slave
 			slaveSlice = append(slaveSlice, newSlave)
 			log.Printf("New slave added...")
 
@@ -133,12 +185,92 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave) {
 				log.Printf("Slave remove request received")
 				for i, v := range slaveSlice {
 					if v.connection == msg.connection {
-						slaveSlice = RemoveIndex(slaveSlice, i)
+						//before removing save file of slave in fNameMap map
+						fmt.Println("before updating map: ", fNameMap)
+						PopulateMap(fNameMap, v.chunks)
+						fmt.Println("new updated map: ", fNameMap)
+						slaveSlice[i].response = "nr"
+						slaveSlice = append(slaveSlice[:i], slaveSlice[i+1:]...)
 						break
 					}
 				}
 				log.Printf("Slave removed")
-			} //else if msg.msg == "not"
+			} else if msg.msg[:3] == "not" {
+				setResponse("not", &slaveSlice, msg)
+				fmt.Println("after not: ", slaveSlice, msg, workingOn, findingInReplica)
+			} else if len(msg.msg) > 4 && msg.msg[:4] == "done" {
+				setResponse(msg.msg, &slaveSlice, msg)
+				// fmt.Println(slaveSlice, msg)
+
+				//stop others
+				for _, v := range slaveSlice {
+					if v.response == "nr" {
+						v.channel <- "stp"
+					}
+				}
+				resetResponses(&slaveSlice)
+				findingInReplica = false
+				// println("sending ###: ", msg.msg)
+				rreqChan <- (workingOn + msg.msg[5:])
+				workingOn = ""
+			}
+
+		case req := <-reqchan:
+			Q.Put(req)
+
+		default:
+			//give command to work for first time
+			if workingOn == "" && !Q.Empty() {
+				v, _ := Q.Get(1)
+				workingOn = fmt.Sprint(v[0])
+				println("workingon: ", workingOn)
+				slc := strings.Split(workingOn, ":")
+				//send command to all slaves
+				resetResponses(&slaveSlice)
+				for _, v := range slaveSlice {
+					v.channel <- "org:" + slc[0]
+				}
+			} else if areResponsesReceived(slaveSlice) && !findingInReplica {
+				//if all responses received and
+				//any slave disconnect between execution then
+				//locate its files and send search command to them
+
+				splitworkingon := strings.Split(workingOn, ":")
+				if len(fNameMap) != 0 && workingOn != "" {
+					findingInReplica = true
+					var ind []int
+					for i, slave := range slaveSlice {
+						itContains := false
+						command := "rep:" + splitworkingon[0] + ":"
+						for _, filename := range slave.rchunks {
+							if _, ok := fNameMap[filename]; ok {
+								command = command + "," + filename
+								itContains = true
+							}
+						}
+						if itContains {
+							//send this command and reset response
+							slave.response = "nr"
+							ind = append(ind, i)
+							findingInReplica = true
+							fmt.Println("slave: ", slaveSlice)
+							slave.channel <- command
+						}
+					}
+					for _, i := range ind {
+						slaveSlice[i].response = "nr"
+					}
+				}
+
+				// fmt.Println("bahir nikle ke baad: ", slaveSlice)
+
+			} else if areResponsesReceived(slaveSlice) && findingInReplica {
+				// if workingOn != "" {
+				resetResponses(&slaveSlice)
+				findingInReplica = false
+				rreqChan <- (workingOn + ":not")
+				workingOn = ""
+			}
 
 		}
 	}
@@ -146,7 +278,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave) {
 }
 
 //Register new slaves //main function for slave server
-func handleNewSlaves(port string) {
+func handleNewSlaves(port string, reqChan, rreqChan chan string) {
 
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -155,7 +287,7 @@ func handleNewSlaves(port string) {
 	log.Print("Slave Master running on port: " + port)
 	addChan := make(chan Slave)
 	msgChan := make(chan Msg)
-	go handleSlaves(msgChan, addChan)
+	go handleSlaves(msgChan, addChan, reqChan, rreqChan)
 
 	for {
 		conn, err := ln.Accept()
@@ -166,6 +298,41 @@ func handleNewSlaves(port string) {
 		go handleSlaveConnection(conn, msgChan, addChan)
 	}
 }
+func handleNewClients(port string, reqChan, rreqChan chan string) {
+
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Print("Cleint Server running on port: " + port)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		go handleClientConnection(conn, reqChan, rreqChan)
+	}
+}
+
+func handleClientConnection(c net.Conn, reqChan, rreqChan chan string) {
+	log.Printf("Handling new client connection...\n")
+	slaveReader := bufio.NewReader(c)
+
+	for {
+
+		c.Write([]byte("Enter password to search: "))
+		buff, _, _ := slaveReader.ReadLine()
+		reqChan <- string(buff) + ":1"
+		resp := <-rreqChan
+		c.Write([]byte(resp))
+	}
+
+	// c.Write([]byte(command + "\n"))
+
+}
+
 func main() {
 	log.Print("To run client server on 3000 use cport=3000")
 	log.Print("To run slave  server on 6000 use sport=6000")
@@ -182,7 +349,11 @@ func main() {
 		}
 	}
 
-	handleNewSlaves(sport)
+	reqChan := make(chan string, 5)
+	rreqChan := make(chan string, 5) //response of reqChan
+
+	go handleNewSlaves(sport, reqChan, rreqChan)
+	handleNewClients(cport, reqChan, rreqChan)
 	cport = cport + "1"
 	// go handleConnection(conn, msgchan, addchan)
 	// }
