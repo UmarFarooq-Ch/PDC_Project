@@ -34,7 +34,19 @@ func ClientServer(port string, reqChan, rreqChan chan string) {
 		reqChan <- details.Message
 		x := <-rreqChan
 		fmt.Println("Client Server: ", x)
-		tmpl.Execute(w, struct{ Success bool }{true})
+		if x != "not" {
+			tmpl.Execute(w, struct {
+				Success bool
+				Reply   string
+				Fail    bool
+			}{true, x, false})
+		} else {
+			tmpl.Execute(w, struct {
+				Success bool
+				Reply   string
+				Fail    bool
+			}{false, x, true})
+		}
 	})
 	fmt.Println("Client server running on port: " + port)
 	http.ListenAndServe(":"+port, nil)

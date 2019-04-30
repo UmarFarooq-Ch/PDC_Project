@@ -206,7 +206,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 				resetResponses(&slaveSlice)
 				findingInReplica = false
 				// println("sending ###: ", msg.msg)
-				rreqChan <- (workingOn + msg.msg[5:])
+				rreqChan <- (msg.msg[5:])
 				workingOn = ""
 			}
 
@@ -263,7 +263,7 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 				// if workingOn != "" {
 				resetResponses(&slaveSlice)
 				findingInReplica = false
-				rreqChan <- (workingOn + ":not")
+				rreqChan <- ("not")
 				workingOn = ""
 			}
 

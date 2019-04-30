@@ -1,6 +1,8 @@
 <!-- forms.html -->
-{{if .Success}}
-<h1>Thanks for your message!</h1>
+{{if .Fail }}
+<h1>Not Found</h1>
+{{else if .Success}}
+<h1>Congrats found in: {{.Reply}}</h1>
 {{else}}
 <h1>Password Database</h1>
 <form method="POST">
