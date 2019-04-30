@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	client "github.com/UmarFarooq-Ch/PDC_Project/Client"
 	"github.com/golang-collections/go-datastructures/queue"
 	//"o«s"
 )
@@ -163,8 +164,8 @@ func handleSlaveConnection(c net.Conn, msgchan chan Msg, addchan chan Slave) {
 func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan string) {
 	slaveSlice := make([]Slave, 0, 20)
 	fNameMap := make(map[string]int) //contain names of original files of slaves who disconnects
-	Q := queue.New(100) //conatins id:password max capacity is 100
-	workingOn := ""     //working on this password (id:password)
+	Q := queue.New(100)              //conatins id:password max capacity is 100
+	workingOn := ""                  //working on this password (id:password)
 	findingInReplica := false
 	for {
 		select {
@@ -347,7 +348,9 @@ func main() {
 	rreqChan := make(chan string, 5) //response of reqChan
 
 	go handleNewSlaves(sport, reqChan, rreqChan)
-	handleNewClients(cport, reqChan, rreqChan)
+	client.ClientServer(cport, reqChan, rreqChan)
+	//handleNewClients(cport, reqChan, rreqChan)
+
 	cport = cport + "1"
 	// go handleConnection(conn, msgchan, addchan)
 	// }

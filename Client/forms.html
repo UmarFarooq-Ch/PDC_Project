@@ -1,0 +1,11 @@
+<!-- forms.html -->
+{{if .Success}}
+<h1>Thanks for your message!</h1>
+{{else}}
+<h1>Password Database</h1>
+<form method="POST">
+  <label>Enter Password</label><br />
+  <textarea name="password"></textarea><br />
+  <input type="submit" />
+</form>
+{{ end }}
