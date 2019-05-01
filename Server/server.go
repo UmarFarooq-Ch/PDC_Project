@@ -298,47 +298,13 @@ func handleNewSlaves(port string, reqChan, rreqChan chan string) {
 		go handleSlaveConnection(conn, msgChan, addChan)
 	}
 }
-func handleNewClients(port string, reqChan, rreqChan chan string) {
-
-	ln, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Print("Cleint Server running on port: " + port)
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		go handleClientConnection(conn, reqChan, rreqChan)
-	}
-}
-
-func handleClientConnection(c net.Conn, reqChan, rreqChan chan string) {
-	log.Printf("Handling new client connection...\n")
-	slaveReader := bufio.NewReader(c)
-
-	for {
-
-		c.Write([]byte("Enter password to search: "))
-		buff, _, _ := slaveReader.ReadLine()
-		reqChan <- string(buff) + ":1"
-		resp := <-rreqChan
-		c.Write([]byte(resp))
-	}
-
-	// c.Write([]byte(command + "\n"))
-
-}
 
 func main() {
 	log.Print("To run client server on 3000 use cport=3000")
-	log.Print("To run slave  server on 6000 use sport=6000")
+	log.Print("To run slave  server on 6000 use sport=9000")
 	args := os.Args
-	var sport string = "3000" //give default port to slave server
-	var cport string = "6000" //give default port to client server
+	sport := "3000" //give default port to slave server
+	cport := "9000" //give default port to client server
 	for _, v := range args[1:] {
 		r := strings.Split(v, "=")
 		if r[0] == "cport" {
@@ -354,9 +320,4 @@ func main() {
 
 	go handleNewSlaves(sport, reqChan, rreqChan)
 	client.ClientServer(cport, reqChan, rreqChan)
-	//handleNewClients(cport, reqChan, rreqChan)
-
-	cport = cport + "1"
-	// go handleConnection(conn, msgchan, addchan)
-	// }
 }
