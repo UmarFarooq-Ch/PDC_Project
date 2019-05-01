@@ -255,6 +255,11 @@ func handleSlaves(msgchan chan Msg, addchan chan Slave, reqchan, rreqChan chan s
 					for _, i := range ind {
 						slaveSlice[i].response = "nr"
 					}
+				} else if workingOn != "" {
+					resetResponses(&slaveSlice)
+					findingInReplica = false
+					rreqChan <- ("not")
+					workingOn = ""
 				}
 
 				// fmt.Println("bahir nikle ke baad: ", slaveSlice)
